@@ -3,9 +3,11 @@
 
    intro
    overview
-   install
    tutorial
+   mpi4py.futures
+   mpi4py.run
    citing
+   install
    appendix
 
 .. Local Variables:

@@ -5,7 +5,9 @@ cdef extern from "atimport.h": pass
 # -----------------------------------------------------------------------------
 
 cdef extern from "Python.h":
-    int Py_IsInitialized() nogil
+    enum: PY_MAJOR_VERSION
+    enum: PYPY "PyMPI_RUNTIME_PYPY"
+
     void PySys_WriteStderr(char*,...)
     int Py_AtExit(void (*)())
 
@@ -247,5 +249,18 @@ cdef inline void print_traceback():
     traceback.print_exc()
     try: sys.stderr.flush()
     except: pass
+
+# -----------------------------------------------------------------------------
+
+# PyPy: Py_IsInitialized() cannot be called without the GIL
+
+cdef extern from "Python.h":
+    int _Py_IsInitialized"Py_IsInitialized"() nogil
+
+cdef object _pypy_sentinel = None
+
+cdef inline int Py_IsInitialized() nogil:
+    if PYPY and (<void*>_pypy_sentinel) == NULL: return 0
+    return _Py_IsInitialized()
 
 # -----------------------------------------------------------------------------

@@ -73,3 +73,68 @@ cdef inline int comm_neighbors_count(MPI_Comm comm,
     return 0
 
 # -----------------------------------------------------------------------------
+
+cdef object allocate_lock = None
+if PY_MAJOR_VERSION >= 3:
+    try:
+        from _thread import allocate_lock
+    except ImportError:
+        from _dummy_thread import allocate_lock
+else:
+    try:
+        from thread  import allocate_lock
+    except ImportError:
+        from dummy_thread import allocate_lock
+
+cdef int  lock_keyval   = MPI_KEYVAL_INVALID
+cdef dict lock_registry = {}
+
+cdef inline int lock_free_cb(MPI_Comm comm) \
+    except MPI_ERR_UNKNOWN with gil:
+    try: del lock_registry[<Py_uintptr_t>comm]
+    except KeyError: pass
+    return MPI_SUCCESS
+
+@cython.callspec("MPIAPI")
+cdef int lock_free_fn(MPI_Comm comm, int keyval,
+                      void *attrval, void *xstate) nogil:
+    if comm == MPI_COMM_SELF:
+        return MPI_Comm_free_keyval(&lock_keyval)
+    if not Py_IsInitialized():
+        return MPI_SUCCESS
+    if <void*>lock_registry == NULL:
+        return MPI_SUCCESS
+    return lock_free_cb(comm)
+
+cdef inline dict PyMPI_Lock_table(MPI_Comm comm):
+    cdef dict table
+    cdef int  found = 0
+    cdef void *attrval = NULL
+    if lock_keyval == MPI_KEYVAL_INVALID:
+        CHKERR( MPI_Comm_create_keyval(
+            MPI_COMM_NULL_COPY_FN, lock_free_fn, &lock_keyval, NULL) )
+        lock_registry[<Py_uintptr_t>MPI_COMM_SELF] = table = {}
+        CHKERR( MPI_Comm_set_attr(MPI_COMM_SELF, lock_keyval, <void*> table) )
+    CHKERR( MPI_Comm_get_attr(comm, lock_keyval, &attrval, &found) )
+    if not found:
+        lock_registry[<Py_uintptr_t>comm] = table = {}
+        CHKERR( MPI_Comm_set_attr(comm, lock_keyval, <void*> table) )
+    else:
+        if PYPY: table = lock_registry[<Py_uintptr_t>comm]
+        else:    table = <dict> attrval
+    return table
+
+cdef inline object PyMPI_Lock(MPI_Comm comm, object key):
+    cdef dict   table = PyMPI_Lock_table(comm)
+    cdef object lock
+    try:
+        lock = table[key]
+    except KeyError:
+        lock = table[key] = allocate_lock()
+    return lock
+
+def _lock_table(Comm comm not None):
+    "Internal communicator lock table"
+    return PyMPI_Lock_table(comm.ob_mpi)
+
+# -----------------------------------------------------------------------------

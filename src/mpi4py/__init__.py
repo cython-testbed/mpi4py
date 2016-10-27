@@ -28,16 +28,12 @@ __version__ = '2.0.1a0'
 __author__ = 'Lisandro Dalcin'
 __credits__ = 'MPI Forum, MPICH Team, Open MPI Team'
 
-# --------------------------------------------------------------------
 
 __all__ = ['MPI']
 
-# --------------------------------------------------------------------
-
 
 def get_include():
-    """
-    Return the directory in the package that contains header files.
+    """Return the directory in the package that contains header files.
 
     Extension modules that need to compile against mpi4py should use
     this function to locate the appropriate include directory. Using
@@ -51,30 +47,21 @@ def get_include():
     from os.path import join, dirname
     return join(dirname(__file__), 'include')
 
-# --------------------------------------------------------------------
-
 
 def get_config():
-    """
-    Return a dictionary with information about MPI.
-    """
+    """Return a dictionary with information about MPI."""
     from os.path import join, dirname
     try:
-        # pylint: disable=import-error
         from configparser import ConfigParser
     except ImportError:  # pragma: no cover
-        # pylint: disable=import-error
         from ConfigParser import ConfigParser
     parser = ConfigParser()
     parser.read(join(dirname(__file__), 'mpi.cfg'))
     return dict(parser.items('mpi'))
 
-# --------------------------------------------------------------------
-
 
 def rc(**kargs):  # pylint: disable=invalid-name
-    """
-    Runtime configuration options.
+    """Runtime configuration options.
 
     Parameters
     ----------
@@ -107,15 +94,11 @@ rc.finalize = None
 rc.fast_reduce = True
 rc.recv_mprobe = True
 rc.errors = 'exception'
-
 __import__('sys').modules[__name__ + '.rc'] = rc
-
-# --------------------------------------------------------------------
 
 
 def profile(name, **kargs):
-    """
-    Support for the MPI profiling interface.
+    """Support for the MPI profiling interface.
 
     Parameters
     ----------
@@ -176,5 +159,3 @@ def profile(name, **kargs):
         warn(dlerror())
 
 profile.registry = []
-
-# --------------------------------------------------------------------

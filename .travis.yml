@@ -2,12 +2,11 @@
 
 language: python
 python:
-  - 2.6
   - 2.7
-  - 3.2
   - 3.3
   - 3.4
   - 3.5
+  - 3.6-dev
 
 os: linux
 dist: trusty
@@ -23,11 +22,12 @@ env:
 matrix:
   include:
     - os: osx
-      env: MPI=mpich PY=
+      env: MPI=mpich PY=2
       language: generic
       python: 2
     - os: osx
-      env: MPI=openmpi PY=
+      osx_image: xcode8
+      env: MPI=openmpi PY=2
       language: generic
       python: 2
     - os: osx
@@ -35,6 +35,7 @@ matrix:
       language: generic
       python: 3
     - os: osx
+      osx_image: xcode8
       env: MPI=openmpi PY=3
       language: generic
       python: 3
@@ -70,7 +71,7 @@ cache:
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install $MPI; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install python$PY; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]] && [[ "$PY" == "3" ]]; then brew install python3; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip$PY install numpy; fi
   - sh conf/ci/travis-ci/install-mpi.sh $MPI
   - pip$PY install https://github.com/cython/cython/archive/master.zip --install-option=--no-cython-compile
@@ -80,9 +81,14 @@ install:
 
 before_script:
   - if [[ "$MPI" == "mpich" ]]; then P=2; else P=5; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]];  then P=2; fi
 script:
-  - mpiexec -n 1  python$PY $PWD/test/runtests.py -v -f --no-builddir --exclude=spawn
-  - mpiexec -n $P python$PY $PWD/test/runtests.py -v -f --no-builddir --exclude=spawn
+  - mpiexec -n 1  python$PY $PWD/test/runtests.py -v -f
+  - mpiexec -n $P python$PY $PWD/test/runtests.py -v -f --exclude=spawn
+  - mpiexec -n 1  python$PY $PWD/demo/futures/test_futures.py -v
+  - mpiexec -n $P python$PY $PWD/demo/futures/test_futures.py -v
+  - mpiexec -n 1  python$PY -m mpi4py.futures $PWD/demo/futures/test_futures.py -v
+  - mpiexec -n $P python$PY -m mpi4py.futures $PWD/demo/futures/test_futures.py -v
 
 #notifications:
 #  email: false

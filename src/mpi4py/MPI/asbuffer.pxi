@@ -12,7 +12,6 @@ cdef extern from "Python.h":
 
 # Python 3 buffer interface (PEP 3118)
 cdef extern from "Python.h":
-    enum: PY3 "(PY_MAJOR_VERSION>=3)"
     ctypedef struct Py_buffer:
         void *obj
         void *buf
@@ -58,7 +57,6 @@ BYTE_FMT[1] = 0
 #------------------------------------------------------------------------------
 
 cdef extern from *:
-    enum: PYPY "PyMPI_RUNTIME_PYPY"
     char*      PyByteArray_AsString(object) except NULL
     Py_ssize_t PyByteArray_Size(object) except -1
 
@@ -88,8 +86,11 @@ except -1:
     cdef void *buf = NULL
     cdef Py_ssize_t size = 0
     cdef bint readonly = 0
-    if PyObject_CheckBuffer(obj):
-        return PyObject_GetBuffer(obj, view, flags)
+    try:
+        if PyObject_CheckBuffer(obj):
+            return PyObject_GetBuffer(obj, view, flags)
+    except TypeError:
+        pass
     if isinstance(obj, bytes):
         buf  = PyBytes_AsString(obj)
         size = PyBytes_Size(obj)
@@ -128,7 +129,7 @@ except -1:
     if PYPY: # special-case PyPy runtime
         return PyPy_GetBuffer(obj, view, flags)
     # Python 3 buffer interface (PEP 3118)
-    if PY3 or PyObject_CheckBuffer(obj):
+    if PY_MAJOR_VERSION >= 3 or PyObject_CheckBuffer(obj):
         return PyObject_GetBuffer(obj, view, flags)
     # Python 2 buffer interface (legacy)
     if (flags & PyBUF_WRITABLE) == PyBUF_WRITABLE:

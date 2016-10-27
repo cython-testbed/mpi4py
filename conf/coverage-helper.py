@@ -19,8 +19,9 @@ def test_mp4py_rc():
     recv_mprobe = True,
     errors = 'exception',
     )
-    try: mpi4py.rc(querty=False)
+    try: mpi4py.rc(qwerty=False)
     except TypeError: pass
+    else: raise RuntimeError
 
 test_mp4py_rc()
 
@@ -55,4 +56,7 @@ test_mp4py_profile()
 
 import mpi4py.__main__
 import mpi4py.bench
+import mpi4py.futures
+import mpi4py.futures.__main__
+import mpi4py.futures._spawn
 import mpi4py.run

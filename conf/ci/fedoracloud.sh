@@ -45,7 +45,7 @@ echo "Running pep8"
 pep8 src/mpi4py | tee pep8-$PY-$MPI.out
 
 echo "Running pylint"
-pylint mpi4py --extension-pkg-whitelist=mpi4py | tee pylint-$PY-$MPI.out
+pylint mpi4py | tee pylint-$PY-$MPI.out
 
 echo "Running coverage"
 /usr/bin/env bash ./conf/coverage.sh
@@ -53,20 +53,33 @@ coverage xml
 mv coverage.xml coverage-$PY-$MPI.xml
 
 echo "Running testsuite"
-python demo/test-run/test_run.py -v
+case "$MPI" in
+    mpich)
+        python demo/test-run/test_run.py -v
+        ;;
+    openmpi)
+       #python demo/test-run/test_run.py -v
+        ;;
+esac
 set -e
 case "$MPI" in
     mpich)
-        mpiexec -n 1 python test/runtests.py -v -e spawn -e dynproc
-        mpiexec -n 2 python test/runtests.py -v -e spawn -e dynproc
-        mpiexec -n 3 python test/runtests.py -v -e spawn -e dynproc
-       #mpiexec -n 8 python test/runtests.py -v -e spawn -e dynproc
+        mpiexec -n 1 python test/runtests.py -v
+        mpiexec -n 2 python test/runtests.py -v -f -e spawn
+        mpiexec -n 3 python test/runtests.py -v -f -e spawn
+       #mpiexec -n 8 python test/runtests.py -v -f -e spawn
+        mpiexec -n 1 python demo/futures/test_futures.py -v
+        mpiexec -n 2 python -m mpi4py.futures demo/futures/test_futures.py -v -f
+        mpiexec -n 3 python -m mpi4py.futures demo/futures/test_futures.py -v -f
         ;;
     openmpi)
-        mpiexec -n 1 python test/runtests.py -v -e spawn -e dynproc --no-threads
-        mpiexec -n 2 python test/runtests.py -v -e spawn -e dynproc --no-threads
-        mpiexec -n 3 python test/runtests.py -v -e spawn -e dynproc --no-threads
-       #mpiexec -n 8 python test/runtests.py -v -e spawn -e dynproc --no-threads
+        mpiexec -n 1 python test/runtests.py --no-threads -v -f
+        mpiexec -n 2 python test/runtests.py --no-threads -v -f -e spawn
+        mpiexec -n 3 python test/runtests.py --no-threads -v -f -e spawn
+       #mpiexec -n 8 python test/runtests.py --no-threads -v -f -e spawn
+        mpiexec -n 1 python demo/futures/test_futures.py -v
+        mpiexec -n 2 python -m mpi4py.futures demo/futures/test_futures.py -v -f
+        mpiexec -n 3 python -m mpi4py.futures demo/futures/test_futures.py -v -f
         ;;
 esac
 set +e

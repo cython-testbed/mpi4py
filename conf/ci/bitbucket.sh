@@ -3,7 +3,7 @@
 # https://bitbucket.org/mpi4py/mpi4py/addon/pipelines/home
 
 RUN() { echo + $@; $@; }
-RUN export ANACONDA=/opt/anaconda
+RUN export ANACONDA=${ANACONDA-/opt/anaconda}
 RUN export CFLAGS=-O0
 
 install-anaconda() {
@@ -35,7 +35,18 @@ test-package() {
   RUN python setup.py install
   RUN python setup.py --quiet clean --all
   if [[ "$MPI" == "mpich"   ]]; then P=2; else P=5; fi
-  if [[ "$MPI" == "openmpi" ]]; then ARGS=--allow-run-as-root; else ARGS=; fi
-  RUN mpiexec $ARGS -n 1  python $PWD/test/runtests.py -v -f --exclude=spawn
-  RUN mpiexec $ARGS -n $P python $PWD/test/runtests.py -v -f --exclude=spawn
+  if [[ "$MPI" == "openmpi" ]]; then MPIEXEC="mpiexec --allow-run-as-root"; fi
+  export MPIEXEC=${MPIEXEC-mpiexec}
+  RUN $MPIEXEC -n 1  python $PWD/test/runtests.py
+  RUN $MPIEXEC -n $P python $PWD/test/runtests.py -f --exclude=spawn
+  RUN $MPIEXEC -n 1  python $PWD/demo/futures/test_futures.py
+  RUN $MPIEXEC -n $P python $PWD/demo/futures/test_futures.py -f
+  RUN $MPIEXEC -n 1  python -m mpi4py.futures $PWD/demo/futures/test_futures.py
+  RUN $MPIEXEC -n $P python -m mpi4py.futures $PWD/demo/futures/test_futures.py -f
+  RUN conda install --quiet --yes coverage
+  RUN ./conf/coverage.sh
+  RUN coverage report
+  RUN curl -s -o codecov.sh https://codecov.io/bash
+  RUN bash codecov.sh -C $BITBUCKET_COMMIT -B $BITBUCKET_BRANCH || true
+  RUN source deactivate
 }
