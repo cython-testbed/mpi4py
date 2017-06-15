@@ -11,16 +11,10 @@ def mkzeros(n):
     return b'\0' * n
 
 def memzero(m):
-    n = len(m)
-    if n == 0: return
     try:
-        zero = b'\0'
-        m[0] = zero
-    except TypeError:
-        zero = 0
-        m[0] = zero
-    for i in range(n):
-        m[i] = zero
+        m[:] = 0
+    except IndexError: # cffi buffer
+        m[0:len(m)] = b'\0'*len(m)
 
 class BaseTestRMA(object):
 

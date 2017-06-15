@@ -136,7 +136,8 @@ class TestDPM(unittest.TestCase):
         # crate server/client sockets
         if rank == 0: # server
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server.bind(('', 0))
+            host = socket.gethostname()
+            server.bind((host, 0))
             server.listen(0)
         if rank == 1: # client
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -189,6 +190,8 @@ if name == 'MPICH' or name == 'MPICH2':
     if MPI.COMM_WORLD.Get_attr(MPI.APPNUM) is None:
         del TestDPM.testNamePublishing
 elif name == 'Open MPI':
+    del TestDPM
+elif name == 'MVAPICH2':
     del TestDPM
 elif name == 'Microsoft MPI':
     del TestDPM

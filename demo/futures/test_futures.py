@@ -91,11 +91,9 @@ class ProcessPoolInitTest(ProcessPoolMixin,
         executor = self.executor_type(
             python_exe=sys.executable,
             max_workers=None,
-            spawn_info=dict(soft="0:1"),
-            sys_argv=sys.argv,
-            sys_path=sys.path,
-            path=[],
+            mpi_info=dict(soft="0:1"),
             main=False,
+            path=[],
             wdir=os.getcwd(),
             env={},
             )
@@ -104,6 +102,24 @@ class ProcessPoolInitTest(ProcessPoolMixin,
         for f in futures:
             f.result()
         executor.shutdown()
+
+    def test_max_workers_environ(self):
+        save = os.environ.get('MPI4PY_MAX_WORKERS')
+        os.environ['MPI4PY_MAX_WORKERS'] = '1'
+        try:
+            executor = self.executor_type()
+            executor.submit(time.sleep, 0).result()
+            executor.shutdown()
+        finally:
+            del os.environ['MPI4PY_MAX_WORKERS']
+            if save is not None:
+                os.environ['MPI4PY_MAX_WORKERS'] = save
+
+    def test_max_workers_negative(self):
+        for number in (0, -1):
+            self.assertRaises(ValueError,
+                              self.executor_type,
+                              max_workers=number)
 
 
 class ProcessPoolBootupTest(ProcessPoolMixin,
@@ -465,12 +481,6 @@ class ExecutorTestMixin:
             results.append(i)
         self.assertEqual([None, None, None], results)
 
-    def test_max_workers_negative(self):
-        for number in (0, -1):
-            self.assertRaises(ValueError,
-                              self.executor_type,
-                              max_workers=number)
-
 
 class ProcessPoolExecutorTest(ProcessPoolMixin,
                               ExecutorTestMixin,
@@ -805,6 +815,8 @@ class MPICommExecutorTest(unittest.TestCase):
 SKIP_POOL_TEST = False
 name, version = MPI.get_vendor()
 if name == 'Open MPI':
+    if version < (2,2,0):
+        SKIP_POOL_TEST = True
     if version < (1,8,0):
         SKIP_POOL_TEST = True
     if sys.platform.startswith('win'):
@@ -812,6 +824,8 @@ if name == 'Open MPI':
 if name == 'MPICH':
     if MPI.COMM_WORLD.Get_attr(MPI.APPNUM) is None:
         SKIP_POOL_TEST = True
+if name == 'MVAPICH2':
+    SKIP_POOL_TEST = True
 if name == 'MPICH2':
     if (version > (1,2,0) and
         MPI.COMM_WORLD.Get_attr(MPI.APPNUM) is None):
