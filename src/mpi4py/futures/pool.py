@@ -61,6 +61,7 @@ class MPIPoolExecutor(Executor):
         Args:
             wait: If ``True`` then bootup will not return until the
                 executor resources are ready to process submissions.
+
         """
         with self._lock:
             if self._shutdown:
@@ -212,6 +213,7 @@ def _apply_chunks(function, chunk):
 
 
 def _build_chunks(chunksize, iterable):
+    iterable = iter(iterable)
     while True:
         chunk = tuple(itertools.islice(iterable, chunksize))
         if not chunk:

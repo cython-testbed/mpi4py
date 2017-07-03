@@ -51,18 +51,18 @@ serialized.lock = None
 
 
 def setup_mpi_threads():
-    thead_level = setup_mpi_threads.thead_level
-    if thead_level is None:
-        thead_level = MPI.Query_thread()
-        setup_mpi_threads.thead_level = thead_level
-        if thead_level < MPI.THREAD_MULTIPLE:  # pragma: no cover
+    thread_level = setup_mpi_threads.thread_level
+    if thread_level is None:
+        thread_level = MPI.Query_thread()
+        setup_mpi_threads.thread_level = thread_level
+        if thread_level < MPI.THREAD_MULTIPLE:  # pragma: no cover
             serialized.lock = threading.Lock()
-    if thead_level < MPI.THREAD_SERIALIZED:  # pragma: no cover
+    if thread_level < MPI.THREAD_SERIALIZED:  # pragma: no cover
         from _warnings import warn
         warn("The level of thread support in MPI "
              "should be at least MPI_THREAD_SERIALIZED",
              RuntimeWarning, 2)
-setup_mpi_threads.thead_level = None
+setup_mpi_threads.thread_level = None
 
 
 # ---
@@ -243,9 +243,9 @@ class SharedPoolCtx(object):
     def __enter__(self):
         assert SharedPool is None
         if MPI.COMM_WORLD.Get_size() >= 2:
-            self.comm = comm = split(MPI.COMM_WORLD, root=0)
+            self.comm = split(MPI.COMM_WORLD, root=0)
             if MPI.COMM_WORLD.Get_rank() == 0:
-                size = comm.Get_remote_size()
+                size = self.comm.Get_remote_size()
                 self.pool = Stack(reversed(range(size)))
         self.itag = 0
         self.root = MPI.COMM_WORLD.Get_rank() == 0
@@ -641,9 +641,9 @@ def server_sync(comm):
 def client_spawn_abort(main_name, main_path):  # pragma: no cover
     main_info = "\n"
     if main_name is not None:
-        main_info += "    main name: '%s'\n" % main_name
+        main_info += "    main name: '{}'\n".format(main_name)
     if main_path is not None:
-        main_info += "    main path: '%s'\n" % main_path
+        main_info += "    main path: '{}'\n".format(main_path)
     main_info += "\n"
     sys.stderr.write("""
     The main script or module attempted to spawn new MPI worker processes.
@@ -686,7 +686,7 @@ def client_spawn(python_exe=None,
     if max_workers is None:
         max_workers = client_spawn_max_workers()
     if mpi_info is None:
-        mpi_info = dict(soft='1:%d' % max_workers)
+        mpi_info = dict(soft='1:{}'.format(max_workers))
 
     args = _sys_flags() + list(python_args)
     args.extend(['-m', __package__ + '._spawn'])

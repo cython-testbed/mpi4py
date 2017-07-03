@@ -455,6 +455,15 @@ class ExecutorTestMixin:
                 list(self.executor.map(pow, range(10), range(10))),
                 list(map(pow, range(10), range(10))))
 
+    def test_starmap(self):
+        sequence = [(a,a) for a in range(10)]
+        self.assertEqual(
+                list(self.executor.starmap(pow, sequence)),
+                list(map(pow, range(10), range(10))))
+        self.assertEqual(
+                list(self.executor.starmap(pow, iter(sequence))),
+                list(map(pow, range(10), range(10))))
+
     def test_map_exception(self):
         i = self.executor.map(divmod, [1, 1, 1, 1], [2, 3, 0, 5])
         self.assertEqual(next(i), (0, 1))
@@ -500,6 +509,32 @@ class ProcessPoolExecutorTest(ProcessPoolMixin,
 
         def bad():
             list(self.executor.map(pow, range(40), range(40), chunksize=-1))
+        self.assertRaises(ValueError, bad)
+
+    def test_starmap_chunksize(self):
+        ref = list(map(pow, range(40), range(40)))
+        sequence = [(a, a) for a in range(40)]
+        self.assertEqual(
+            list(self.executor.starmap(pow, sequence, chunksize=6)),
+            ref)
+        self.assertEqual(
+            list(self.executor.starmap(pow, sequence, chunksize=50)),
+            ref)
+        self.assertEqual(
+            list(self.executor.starmap(pow, sequence, chunksize=40)),
+            ref)
+        self.assertEqual(
+            list(self.executor.starmap(pow, iter(sequence), chunksize=6)),
+            ref)
+        self.assertEqual(
+            list(self.executor.starmap(pow, iter(sequence), chunksize=50)),
+            ref)
+        self.assertEqual(
+            list(self.executor.starmap(pow, iter(sequence), chunksize=40)),
+            ref)
+
+        def bad():
+            list(self.executor.starmap(pow, sequence, chunksize=-1))
         self.assertRaises(ValueError, bad)
 
     def test_map_unordered(self):
@@ -1133,7 +1168,11 @@ if name == 'MPICH2':
     if sys.platform.startswith('win'):
         SKIP_POOL_TEST = True
 if name == 'Microsoft MPI':
-    SKIP_POOL_TEST = True
+    del ProcessPoolSubmitTest.test_multiple_executors
+    if MPI.COMM_WORLD.Get_attr(MPI.APPNUM) is None:
+        SKIP_POOL_TEST = True
+    if version < (8,1,0):
+        SKIP_POOL_TEST = True
 if name == 'Platform MPI':
     SKIP_POOL_TEST = True
 if name == 'HP MPI':
