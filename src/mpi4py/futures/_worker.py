@@ -8,6 +8,7 @@ import sys
 import time
 import atexit
 import weakref
+import itertools
 import threading
 import collections
 
@@ -78,32 +79,42 @@ def _set_num_workers(executor_ref, event, num_workers):
 
 
 def _manager_thread(executor_ref, event, queue, **options):
-    _set_num_workers(executor_ref, event, 1)
+    size = options.pop('max_workers', 1)
+    _set_num_workers(executor_ref, event, size)
 
     sleep = time.sleep
-    delay = options.get('delay', 10e-6)
-    assert delay >= 0
+    throttle = options.get('throttle', 100e-6)
+    assert throttle >= 0
 
-    while True:
-        while not queue:
-            sleep(delay)
-        task = queue.pop()
-        if task is None:
-            break
-        future, work = task
-        if not future.set_running_or_notify_cancel():
-            continue
-        func, args, kwargs = work
-        try:
-            result = func(*args, **kwargs)
-            exception = None
-        except BaseException:
-            result = None
-            exception = sys_exception()
-        if exception is None:
-            future.set_result(result)
-        else:
-            future.set_exception(exception)
+    def worker():
+        while True:
+            try:
+                task = queue.pop()
+            except LookupError:
+                sleep(throttle)
+                continue
+            if task is None:
+                queue.put(None)
+                break
+            future, work = task
+            if not future.set_running_or_notify_cancel():
+                continue
+            func, args, kwargs = work
+            try:
+                result = func(*args, **kwargs)
+                future.set_result(result)
+            except BaseException:
+                exception = sys_exception()
+                future.set_exception(exception)
+
+    threads = [threading.Thread(target=worker)
+               for _ in range(size - 1)]
+    for thread in threads:
+        thread.start()
+    worker()
+    for thread in threads:
+        thread.join()
+    queue.pop()
 
 
 def _manager_comm(executor_ref, event, queue, comm, **options):
@@ -124,6 +135,17 @@ def _manager_spawn(executor_ref, event, queue, **options):
 
 
 THREADS_QUEUES = weakref.WeakKeyDictionary()
+
+
+def join_threads(threads_queues=THREADS_QUEUES):
+    items = list(threads_queues.items())
+    for _, queue in items:   # pragma: no cover
+        queue.put(None)
+    for thread, _ in items:  # pragma: no cover
+        thread.join()
+
+
+atexit.register(join_threads)
 
 
 class Pool(object):
@@ -155,17 +177,6 @@ class Pool(object):
 
     def join(self):
         self.thread.join()
-
-    @staticmethod
-    def join_all(threads_queues=THREADS_QUEUES):
-        items = list(threads_queues.items())
-        for _, queue in items:   # pragma: no cover
-            queue.put(None)
-        for thread, _ in items:  # pragma: no cover
-            thread.join()
-
-
-atexit.register(Pool.join_all)
 
 
 def ThreadPool(executor, **options):
@@ -220,63 +231,96 @@ class SharedPoolCtx(object):
 
     def __init__(self):
         self.comm = MPI.COMM_NULL
-        self.itag = 0
-        self.pool = None
-        self.root = None
-        self.lock = threading.Lock()
-        self.threads_queues = weakref.WeakKeyDictionary()
+        self.on_root = None
+        self.counter = None
+        self.workers = None
+        self.threads = weakref.WeakKeyDictionary()
 
     def __call__(self, executor, **options):
         assert SharedPool is self
-        with self.lock:
-            tag = self.itag
-            self.itag = tag + 1
-        if self.comm != MPI.COMM_NULL and self.root:
-            manager, args = _manager_shared, (self.comm, tag, self.pool)
+        tag = next(self.counter)
+        if self.comm != MPI.COMM_NULL and self.on_root:
+            args = (self.comm, tag, self.workers)
+            pool = Pool(_manager_shared, executor, *args, **options)
         else:
-            manager, args = _manager_thread, ()
-        pool = Pool(manager, executor, *args, **options)
+            pool = Pool(_manager_thread, executor, **options)
         del THREADS_QUEUES[pool.thread]
-        self.threads_queues[pool.thread] = pool.queue
+        self.threads[pool.thread] = pool.queue
         return pool
 
     def __enter__(self):
         assert SharedPool is None
+        self.on_root = MPI.COMM_WORLD.Get_rank() == 0
+        self.counter = itertools.count(0)
         if MPI.COMM_WORLD.Get_size() >= 2:
             self.comm = split(MPI.COMM_WORLD, root=0)
-            if MPI.COMM_WORLD.Get_rank() == 0:
+            if self.on_root:
                 size = self.comm.Get_remote_size()
-                self.pool = Stack(reversed(range(size)))
-        self.itag = 0
-        self.root = MPI.COMM_WORLD.Get_rank() == 0
+                self.workers = Stack(reversed(range(size)))
         _set_shared_pool(self)
-        return self if self.root else None
+        return self if self.on_root else None
 
     def __exit__(self, *args):
         assert SharedPool is self
-        if self.root:
-            Pool.join_all(self.threads_queues)
+        if self.on_root:
+            join_threads(self.threads)
         if self.comm != MPI.COMM_NULL:
-            if self.root:
-                if self.itag == 0:
+            if self.on_root:
+                if next(self.counter) == 0:
                     client_sync(self.comm, dict(main=False))
                 client_close(self.comm)
             else:
                 options = server_sync(self.comm)
                 server(self.comm, **options)
                 server_close(self.comm)
-        if not self.root:
-            Pool.join_all(self.threads_queues)
+        if not self.on_root:
+            join_threads(self.threads)
         _set_shared_pool(None)
         self.comm = MPI.COMM_NULL
-        self.itag = 0
-        self.pool = None
-        self.root = None
-        self.threads_queues.clear()
+        self.on_root = None
+        self.counter = None
+        self.workers = None
+        self.threads.clear()
         return False
 
 
 # ---
+
+
+def barrier(comm):
+    assert comm.Is_inter()
+    sleep = time.sleep
+    throttle = 100e-6
+    try:
+        request = comm.Ibarrier()
+        while not request.Test():
+            sleep(throttle)
+    except NotImplementedError:  # pragma: no cover
+        buf = [None, 0, MPI.BYTE]
+        tag = MPI.COMM_WORLD.Get_attr(MPI.TAG_UB)
+        sendreqs, recvreqs = [], []
+        for pid in range(comm.Get_remote_size()):
+            recvreqs.append(comm.Irecv(buf, pid, tag))
+            sendreqs.append(comm.Issend(buf, pid, tag))
+        while not MPI.Request.Testall(recvreqs):
+            sleep(throttle)
+        MPI.Request.Waitall(sendreqs)
+
+
+def client_sync(comm, options):
+    assert comm.Is_inter()
+    assert comm.Get_size() == 1
+    barrier(comm)
+    data = _sync_get_data(options)
+    if MPI.ROOT != MPI.PROC_NULL:
+        comm.bcast(data, MPI.ROOT)
+    else:  # pragma: no cover
+        tag = MPI.COMM_WORLD.Get_attr(MPI.TAG_UB)
+        size = comm.Get_remote_size()
+        MPI.Request.Waitall([
+            comm.issend(data, pid, tag)
+            for pid in range(size)])
+    return options
 
 
 def client(comm, tag, worker_pool, task_queue, **options):
@@ -292,8 +336,8 @@ def client(comm, tag, worker_pool, task_queue, **options):
     request_free = serialized(MPI.Request.Free)
 
     sleep = time.sleep
-    delay = options.get('delay', 10e-6)
-    assert delay >= 0
+    throttle = options.get('throttle', 100e-6)
+    assert throttle >= 0
 
     pending = {}
 
@@ -304,7 +348,7 @@ def client(comm, tag, worker_pool, task_queue, **options):
     def probe():
         pid = MPI.ANY_SOURCE
         while not comm_iprobe(pid, tag, status):
-            sleep(delay)
+            sleep(throttle)
 
     def recv():
         pid = status.source
@@ -357,7 +401,7 @@ def client(comm, tag, worker_pool, task_queue, **options):
             idle = False
             recv()
         if idle:
-            sleep(delay)
+            sleep(throttle)
     while pending:
         probe()
         recv()
@@ -374,6 +418,19 @@ def client_close(comm):
         comm.Free()
 
 
+def server_sync(comm):
+    assert comm.Is_inter()
+    assert comm.Get_remote_size() == 1
+    barrier(comm)
+    if MPI.ROOT != MPI.PROC_NULL:
+        data = comm.bcast(None, 0)
+    else:  # pragma: no cover
+        tag = MPI.COMM_WORLD.Get_attr(MPI.TAG_UB)
+        data = comm.recv(None, 0, tag)
+    options = _sync_set_data(data)
+    return options
+
+
 def server(comm, **options):
     assert comm.Is_inter()
     assert comm.Get_remote_size() == 1
@@ -385,13 +442,13 @@ def server(comm, **options):
     request_test = MPI.Request.Test
 
     sleep = time.sleep
-    delay = options.get('delay', 10e-6)
-    assert delay >= 0
+    throttle = options.get('throttle', 100e-6)
+    assert throttle >= 0
 
     def recv():
         pid, tag = MPI.ANY_SOURCE, MPI.ANY_TAG
         while not comm_iprobe(pid, tag, status):
-            sleep(delay)
+            sleep(throttle)
         pid, tag = status.source, status.tag
         try:
             task = comm_recv(None, pid, tag, status)
@@ -417,7 +474,7 @@ def server(comm, **options):
             task = (None, sys_exception())
             request = comm_isend(task, pid, tag)
         while not request_test(request):
-            sleep(delay)
+            sleep(throttle)
 
     while True:
         task = recv()
@@ -441,7 +498,7 @@ def get_world():
     return MPI.COMM_WORLD
 
 
-def split(comm, root=0, tag=0):
+def split(comm, root=0):
     assert not comm.Is_inter()
     assert comm.Get_size() > 1
     assert 0 <= root < comm.Get_size()
@@ -468,7 +525,7 @@ def split(comm, root=0, tag=0):
         local_leader = 0
         remote_leader = root
     intercomm = intracomm.Create_intercomm(
-        local_leader, comm, remote_leader, tag)
+        local_leader, comm, remote_leader, tag=0)
     intracomm.Free()
 
     return intercomm
@@ -477,16 +534,20 @@ def split(comm, root=0, tag=0):
 # ---
 
 
-def import_main(mod_name, mod_path, run_name):
+def import_main(mod_name, mod_path, init_globals, run_name):
     # pylint: disable=protected-access
     import types
     import runpy
 
     module = types.ModuleType(run_name)
+    if init_globals is not None:
+        module.__dict__.update(init_globals)
+        module.__name__ = run_name
 
     class TempModulePatch(runpy._TempModule):
         # pylint: disable=too-few-public-methods
         def __init__(self, mod_name):
+            # pylint: disable=no-member
             super(TempModulePatch, self).__init__(mod_name)
             assert self.module.__name__ == run_name
             self.module = module
@@ -541,8 +602,8 @@ def _sync_set_data(data):
 
     mod_name = data.pop('@main:mod_name', None)
     mod_path = data.pop('@main:mod_path', None)
-    run_name = data.pop('@main:run_name', MAIN_RUN_NAME)
-    import_main(mod_name, mod_path, run_name)
+    mod_glbs = data.pop('globals', None)
+    import_main(mod_name, mod_path, mod_glbs, MAIN_RUN_NAME)
 
     return data
 
@@ -584,55 +645,6 @@ def _sys_flags():
         args.append('-X' + opt if val is True else
                     '-X' + opt + '=' + val)
     return args
-
-
-def _sync_ibarrier(comm):
-    assert comm.Is_inter()
-    sleep = time.sleep
-    delay = 10e-6
-    try:
-        request = comm.Ibarrier()
-        while not request.Test():
-            sleep(delay)
-    except NotImplementedError:  # pragma: no cover
-        buf = [None, 0, MPI.BYTE]
-        tag = MPI.COMM_WORLD.Get_attr(MPI.TAG_UB)
-        sendreqs, recvreqs = [], []
-        for pid in range(comm.Get_remote_size()):
-            recvreqs.append(comm.Irecv(buf, pid, tag))
-            sendreqs.append(comm.Issend(buf, pid, tag))
-        while not MPI.Request.Testall(recvreqs):
-            sleep(delay)
-        MPI.Request.Waitall(sendreqs)
-
-
-def client_sync(comm, options):
-    assert comm.Is_inter()
-    assert comm.Get_size() == 1
-    _sync_ibarrier(comm)
-    data = _sync_get_data(options)
-    if MPI.ROOT != MPI.PROC_NULL:
-        comm.bcast(data, MPI.ROOT)
-    else:  # pragma: no cover
-        tag = MPI.COMM_WORLD.Get_attr(MPI.TAG_UB)
-        size = comm.Get_remote_size()
-        MPI.Request.Waitall([
-            comm.issend(data, pid, tag)
-            for pid in range(size)])
-    return options
-
-
-def server_sync(comm):
-    assert comm.Is_inter()
-    assert comm.Get_remote_size() == 1
-    _sync_ibarrier(comm)
-    if MPI.ROOT != MPI.PROC_NULL:
-        data = comm.bcast(None, 0)
-    else:  # pragma: no cover
-        tag = MPI.COMM_WORLD.Get_attr(MPI.TAG_UB)
-        data = comm.recv(None, 0, tag)
-    options = _sync_set_data(data)
-    return options
 
 
 # ---
