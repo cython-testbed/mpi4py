@@ -53,6 +53,12 @@ OBJS = [
     {'a':0, 'b':1},
     ]
 
+try:
+    memoryview
+    tobytes = lambda s: memoryview(s).tobytes()
+except NameError:
+    tobytes = lambda s: buffer(s)[:]
+
 class TestPickle(unittest.TestCase):
 
     def setUp(self):
@@ -154,7 +160,7 @@ class TestPickle(unittest.TestCase):
         def testSimpleJson(self):
             pickle = self.pickle
             dumps = lambda o: simplejson.dumps(o).encode()
-            loads = lambda s: simplejson.loads(s.decode())
+            loads = lambda s: simplejson.loads(tobytes(s).decode())
             pickle.__init__(dumps, loads)
             OBJS2 = [o for o in OBJS
                      if not isinstance(o, (float, complex, tuple))]
@@ -166,7 +172,7 @@ class TestPickle(unittest.TestCase):
         def testJson(self):
             pickle = self.pickle
             dumps = lambda o: json.dumps(o).encode()
-            loads = lambda s: json.loads(s.decode())
+            loads = lambda s: json.loads(tobytes(s).decode())
             pickle.__init__(dumps, loads)
             OBJS2 = [o for o in OBJS
                      if not isinstance(o, (float, complex, tuple))]
@@ -178,7 +184,7 @@ class TestPickle(unittest.TestCase):
         def testYAML(self):
             pickle = self.pickle
             dumps = lambda o: yaml.dump(o).encode()
-            loads = lambda s: yaml.load(s.decode())
+            loads = lambda s: yaml.load(tobytes(s).decode())
             pickle.__init__(dumps, loads)
             OBJS2 = [o for o in OBJS
                      if not isinstance(o, (complex, tuple))]
