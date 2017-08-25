@@ -1,6 +1,4 @@
 #!/bin/bash
-# Test script running on Bitbucket Pipelines
-# https://bitbucket.org/mpi4py/mpi4py/addon/pipelines/home
 
 RUN() { echo + $@; $@; }
 RUN export ANACONDA=${ANACONDA-/opt/anaconda}
@@ -8,7 +6,7 @@ RUN export CFLAGS=-O0
 
 install-anaconda() {
   MINICONDA=Miniconda2-latest-Linux-$(arch).sh
-  RUN wget --quiet -P ~ http://repo.continuum.io/miniconda/$MINICONDA
+  RUN curl -s -o ~/$MINICONDA https://repo.continuum.io/miniconda/$MINICONDA
   RUN bash ~/$MINICONDA -b -f -p $ANACONDA
   RUN source $ANACONDA/bin/activate root
   RUN conda config --set show_channel_urls yes
@@ -43,10 +41,12 @@ test-package() {
   RUN $MPIEXEC -n $P python $PWD/demo/futures/test_futures.py -f
   RUN $MPIEXEC -n 1  python -m mpi4py.futures $PWD/demo/futures/test_futures.py
   RUN $MPIEXEC -n $P python -m mpi4py.futures $PWD/demo/futures/test_futures.py -f
-  RUN conda install --quiet --yes coverage
-  RUN ./conf/coverage.sh
-  RUN coverage report
-  RUN curl -s -o codecov.sh https://codecov.io/bash
-  RUN bash codecov.sh -X gcov -X fix -C $BITBUCKET_COMMIT -B $BITBUCKET_BRANCH
+  if [[ "$coverage" == "yes" ]]; then
+      RUN conda install --quiet --yes coverage
+      RUN ./conf/coverage.sh
+      RUN coverage report
+      RUN coverage xml
+      RUN mv coverage.xml coverage-py$PY-$MPI.xml
+  fi
   RUN source deactivate
 }

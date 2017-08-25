@@ -48,8 +48,8 @@ cdef class Comm:
         cdef Comm s = <Comm>self, o = <Comm>other
         if   op == Py_EQ: return (s.ob_mpi == o.ob_mpi)
         elif op == Py_NE: return (s.ob_mpi != o.ob_mpi)
-        cdef str mod = type(self).__module__
-        cdef str cls = type(self).__name__
+        cdef mod = type(self).__module__
+        cdef cls = type(self).__name__
         raise TypeError("unorderable type: '%s.%s'" % (mod, cls))
 
     def __bool__(self):
@@ -1577,10 +1577,10 @@ cdef class Intracomm(Comm):
         #
         cdef int j=0, p=0, q=0
         if errcodes is not None:
-            errcodes[:] = [[]] * count
+            errcodes[:] = [[] for j from 0 <= j < count]
             for i from 0 <= i < count:
                 q = p + imaxprocs[i]
-                errcodes[i] = [ierrcodes[j] for j from p <= j < q]
+                errcodes[i][:] = [ierrcodes[j] for j from p <= j < q]
                 p = q
         #
         comm_set_eh(comm.ob_mpi)

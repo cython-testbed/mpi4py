@@ -61,20 +61,38 @@ static void PyMPI_OPENMPI_dlopen_libmpi(void)
   #ifdef RTLD_NOLOAD
   mode |= RTLD_NOLOAD;
   #endif
+  #if defined(OMPI_MAJOR_VERSION)
+  #if OMPI_MAJOR_VERSION == 2
   if (!handle) handle = dlopen("libmpi.20.dylib", mode);
+  #elif OMPI_MAJOR_VERSION == 1 && OMPI_MINOR_VERSION >= 10
   if (!handle) handle = dlopen("libmpi.12.dylib", mode);
+  #elif OMPI_MAJOR_VERSION == 1 && OMPI_MINOR_VERSION >= 6
   if (!handle) handle = dlopen("libmpi.1.dylib", mode);
+  #elif OMPI_MAJOR_VERSION == 1
   if (!handle) handle = dlopen("libmpi.0.dylib", mode);
+  #endif
+  #endif
   if (!handle) handle = dlopen("libmpi.dylib", mode);
 #else
   /* GNU/Linux and others */
   #ifdef RTLD_NOLOAD
   mode |= RTLD_NOLOAD;
   #endif
+  #if defined(OMPI_MAJOR_VERSION)
+  #if OMPI_MAJOR_VERSION >= 10 /* IBM Spectrum MPI */
+  if (!handle) handle = dlopen("libmpi_ibm.so.2", mode);
+  if (!handle) handle = dlopen("libmpi_ibm.so.1", mode);
+  if (!handle) handle = dlopen("libmpi_ibm.so", mode);
+  #elif OMPI_MAJOR_VERSION == 2
   if (!handle) handle = dlopen("libmpi.so.20", mode);
+  #elif OMPI_MAJOR_VERSION == 1 && OMPI_MINOR_VERSION >= 10
   if (!handle) handle = dlopen("libmpi.so.12", mode);
+  #elif OMPI_MAJOR_VERSION == 1 && OMPI_MINOR_VERSION >= 6
   if (!handle) handle = dlopen("libmpi.so.1", mode);
+  #elif OMPI_MAJOR_VERSION == 1
   if (!handle) handle = dlopen("libmpi.so.0", mode);
+  #endif
+  #endif
   if (!handle) handle = dlopen("libmpi.so", mode);
 #endif
 }

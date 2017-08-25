@@ -19,6 +19,9 @@ if hasattr(sys, 'pypy_version_info'):
     for name in ('prefix', 'exec_prefix'):
         if name not in config_vars:
             config_vars[name] = os.path.normpath(getattr(sys, name))
+    if sys.platform == 'darwin' and 'LDSHARED' in config_vars:
+        if '-undefined' not in config_vars['LDSHARED']:
+            config_vars['LDSHARED'] += ' -undefined dynamic_lookup'
 
 # Workaround distutils.cygwinccompiler.get_versions()
 # failing when the compiler path contains spaces
@@ -809,7 +812,7 @@ class build_clib(cmd_build_clib.build_clib):
         config = configuration(self, verbose=True)
         configure_compiler(self.compiler, config)
         if self.compiler.compiler_type == "unix":
-            try: del compiler.shared_lib_extension
+            try: del self.compiler.shared_lib_extension
             except: pass
         #
         self.build_libraries(self.libraries)
@@ -934,8 +937,7 @@ class build_clib(cmd_build_clib.build_clib):
         if sys.platform != 'darwin':
             if lib_type == 'dylib':
                 lib_type = 'shared'
-        compiler = self.compiler # XXX
-        lib_fullpath = compiler.library_filename(
+        lib_fullpath = self.compiler.library_filename(
             lib.name, lib_type=lib_type, output_dir=output_dir)
         return lib_fullpath
 
