@@ -45,10 +45,6 @@ static int PyMPI_Get_vendor(const char **vendor_name,
   minor = MSMPI_VER & 0xff;
   major = (major/16)*10+(major%16);
 
-#elif defined(DEINO_MPI)
-
-  name = "Deino MPI";
-
 #elif defined(MVAPICH2_VERSION) || defined(MVAPICH2_NUMVERSION)
 
   name = "MVAPICH2";
@@ -103,6 +99,12 @@ static int PyMPI_Get_vendor(const char **vendor_name,
   #endif
   #if defined(OMPI_RELEASE_VERSION)
   micro = OMPI_RELEASE_VERSION;
+  #endif
+
+  #if defined(OMPI_MAJOR_VERSION)
+  #if OMPI_MAJOR_VERSION >= 10
+  name = "Spectrum MPI";
+  #endif
   #endif
 
 #elif defined(LAM_MPI)
