@@ -74,7 +74,7 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]] && [[ "$PY" == "3" ]]; then brew install python3; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip$PY install numpy; fi
   - sh conf/ci/travis-ci/install-mpi.sh $MPI
-  - pip$PY install https://github.com/cython/cython/archive/df39a2793a383e02301fa09767f2e013270efb0c.zip --install-option=--no-cython-compile
+  - pip$PY install https://github.com/cython/cython/archive/038977d4776041e1a81640058ff97bdbd796534b.zip --install-option=--no-cython-compile
   - cython --version
 install:
   - pip$PY -vvv install .
