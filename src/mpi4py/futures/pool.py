@@ -47,7 +47,6 @@ class MPIPoolExecutor(Executor):
             kwargs['max_workers'] = max_workers
 
         self._options = kwargs
-        self._num_workers = None
         self._shutdown = False
         self._lock = threading.Lock()
         self._pool = None
@@ -87,8 +86,8 @@ class MPIPoolExecutor(Executor):
                 raise RuntimeError("cannot submit after shutdown")
             self._bootstrap()
             future = self.Future()
-            work = (fn, args, kwargs)
-            self._pool.push((future, work))
+            task = (fn, args, kwargs)
+            self._pool.push((future, task))
             return future
 
     def map(self, fn, *iterables, **kwargs):
@@ -185,26 +184,31 @@ def _starmap_helper(submit, function, iterable, timeout, unordered):
         end_time = timeout + timer()
 
     futures = [submit(function, *args) for args in iterable]
+    if unordered:
+        futures = set(futures)
 
     def result_iterator():  # pylint: disable=missing-docstring
         try:
             if unordered:
                 if timeout is None:
-                    for future in as_completed(futures):
-                        yield future.result()
+                    iterator = as_completed(futures)
                 else:
-                    for future in as_completed(futures, end_time - timer()):
-                        yield future.result()
+                    iterator = as_completed(futures, end_time - timer())
+                for future in iterator:
+                    futures.remove(future)
+                    future = [future]
+                    yield future.pop().result()
             else:
+                futures.reverse()
                 if timeout is None:
-                    for future in futures:
-                        yield future.result()
+                    while futures:
+                        yield futures.pop().result()
                 else:
-                    for future in futures:
-                        yield future.result(end_time - timer())
+                    while futures:
+                        yield futures.pop().result(end_time - timer())
         except:
-            for future in futures:
-                future.cancel()
+            while futures:
+                futures.pop().cancel()
             raise
     return result_iterator()
 
@@ -222,6 +226,13 @@ def _build_chunks(chunksize, iterable):
         yield (chunk,)
 
 
+def _chain_from_iterable_of_lists(iterable):
+    for item in iterable:
+        item.reverse()
+        while item:
+            yield item.pop()
+
+
 def _starmap_chunks(submit, function, iterable,
                     timeout, unordered, chunksize):
     # pylint: disable=too-many-arguments
@@ -229,7 +240,7 @@ def _starmap_chunks(submit, function, iterable,
     iterable = _build_chunks(chunksize, iterable)
     result = _starmap_helper(submit, function, iterable,
                              timeout, unordered)
-    return itertools.chain.from_iterable(result)
+    return _chain_from_iterable_of_lists(result)
 
 
 class MPICommExecutor(object):

@@ -90,6 +90,7 @@ atexit.register(join_threads)
 class Pool(object):
 
     def __init__(self, executor, manager, *args):
+        self.size = None
         self.event = threading.Event()
         self.queue = queue = Queue()
         self.exref = weakref.ref(executor, lambda _, q=queue: q.put(None))
@@ -118,10 +119,7 @@ class Pool(object):
 
 
 def setup_pool(pool, num_workers):
-    # pylint: disable=protected-access
-    executor = pool.exref()
-    if executor is not None:
-        executor._num_workers = num_workers
+    pool.size = num_workers
     pool.event.set()
     return pool.queue
 
@@ -137,23 +135,24 @@ def _manager_thread(pool, **options):
     def worker():
         while True:
             try:
-                task = queue.pop()
+                item = queue.pop()
             except LookupError:
                 sleep(throttle)
                 continue
-            if task is None:
+            if item is None:
                 queue.put(None)
                 break
-            future, work = task
+            future, task = item
             if not future.set_running_or_notify_cancel():
                 continue
-            func, args, kwargs = work
+            func, args, kwargs = task
             try:
                 result = func(*args, **kwargs)
                 future.set_result(result)
             except BaseException:
                 exception = sys_exception()
                 future.set_exception(exception)
+            del item, future
 
     threads = [threading.Thread(target=worker) for _ in range(size - 1)]
     for thread in threads:
@@ -434,20 +433,24 @@ def client(comm, tag, worker_pool, task_queue, **options):
         else:
             future.set_exception(exception)
 
-    def send(task):
+    def send():
+        item = task_queue.pop()
+        if item is None:
+            return True
+
         try:
             pid = worker_pool.pop()
         except LookupError:  # pragma: no cover
-            task_queue.add(task)
+            task_queue.add(item)
             return
 
-        future, work = task
+        future, task = item
         if not future.set_running_or_notify_cancel():
             worker_pool.put(pid)
             return
 
         try:
-            request = comm_isend(work, pid, tag)
+            request = comm_isend(task, pid, tag)
             pending[pid] = (future, request)
         except BaseException:
             worker_pool.put(pid)
@@ -456,11 +459,10 @@ def client(comm, tag, worker_pool, task_queue, **options):
     while True:
         idle = True
         if task_queue and worker_pool:
-            task = task_queue.pop()
-            if task is None:
-                break
             idle = False
-            send(task)
+            stop = send()
+            if stop:
+                break
         if pending and iprobe():
             idle = False
             recv()
