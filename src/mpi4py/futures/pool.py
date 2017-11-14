@@ -51,9 +51,11 @@ class MPIPoolExecutor(Executor):
         self._lock = threading.Lock()
         self._pool = None
 
+    _make_pool = staticmethod(_lib.WorkerPool)
+
     def _bootstrap(self):
         if self._pool is None:
-            self._pool = _lib.WorkerPool(self)
+            self._pool = self._make_pool(self)
 
     def bootup(self, wait=True):
         """Allocate executor resources eagerly.
@@ -295,21 +297,20 @@ class MPICommExecutor(object):
         comm = self._comm
         root = self._root
         options = self._options
+        executor = None
+
         if _lib.SharedPool:
             assert root == 0
             executor = MPIPoolExecutor(**options)
-            pool = _lib.SharedPool(executor)
+            executor._pool = _lib.SharedPool(executor)
         elif comm.Get_size() == 1:
             executor = MPIPoolExecutor(**options)
-            pool = _lib.ThreadPool(executor)
+            executor._pool = _lib.ThreadPool(executor)
         elif comm.Get_rank() == root:
             executor = MPIPoolExecutor(**options)
-            pool = _lib.SplitPool(executor, comm, root)
+            executor._pool = _lib.SplitPool(executor, comm, root)
         else:
-            executor = pool = None
             _lib.server_main_split(comm, root, **options)
-        if executor is not None:
-            executor._pool = pool
 
         self._executor = executor
         return executor
@@ -324,3 +325,13 @@ class MPICommExecutor(object):
             return False
         else:
             return True
+
+
+class ThreadPoolExecutor(MPIPoolExecutor):  # noqa: D204
+    """`MPIPoolExecutor` subclass using a pool of threads."""
+    _make_pool = staticmethod(_lib.ThreadPool)
+
+
+class ProcessPoolExecutor(MPIPoolExecutor):  # noqa: D204
+    """`MPIPoolExecutor` subclass using a pool of processes."""
+    _make_pool = staticmethod(_lib.SpawnPool)

@@ -6,7 +6,7 @@ CHANGES: MPI for Python
 :Contact: dalcinl@gmail.com
 
 
-Release 2.1.0 [2017-XX-XX]
+Release 3.0.0 [2017-11-08]
 ==========================
 
 * New features:
@@ -31,11 +31,14 @@ Release 2.1.0 [2017-XX-XX]
     through user-defined datatypes.
   + The ``Request.Wait[all]()`` methods now return ``True`` to match
     the interface of ``Request.Test[all]()``.
+  + The ``Win`` class now implements the Python buffer interface.
 
 * Backward-incompatible changes:
 
   + The ``buf`` argument of the ``MPI.Comm.recv()`` method is
     deprecated, passing anything but ``None`` emits a warning.
+  + The ``MPI.Win.memory`` property was removed, use the
+    ``MPI.Win.tomemory()`` method instead.
   + Executing ``python -m mpi4py`` in the command line is now
     equivalent to ``python -m mpi4py.run``. For the former behavior,
     use ``python -m mpi4py.bench``.

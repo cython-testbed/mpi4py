@@ -36,7 +36,7 @@ class BaseTestWin(object):
         self.assertEqual(base, self.WIN.Get_attr(MPI.WIN_BASE))
 
     def testMemory(self):
-        memory = self.WIN.memory
+        memory = self.WIN.tomemory()
         pointer = MPI.Get_address(memory)
         length = len(memory)
         base, size, dunit = self.WIN.attrs
@@ -46,9 +46,9 @@ class BaseTestWin(object):
 
     def testAttributes(self):
         base, size, unit = self.WIN.attrs
+        self.assertEqual(base, MPI.Get_address(self.memory))
         self.assertEqual(size, len(self.memory))
         self.assertEqual(unit, 1)
-        self.assertEqual(base, MPI.Get_address(self.memory))
 
     def testGetGroup(self):
         cgroup = self.COMM.Get_group()
@@ -129,7 +129,7 @@ class BaseTestWinAllocate(BaseTestWin):
 
     def setUp(self):
         self.WIN = MPI.Win.Allocate(10, 1, self.INFO, self.COMM)
-        self.memory = self.WIN.memory
+        self.memory = self.WIN.tomemory()
         memzero(self.memory)
 
     def tearDown(self):
@@ -141,14 +141,14 @@ class BaseTestWinAllocateShared(BaseTestWin):
 
     def setUp(self):
         self.WIN = MPI.Win.Allocate_shared(10, 1, self.INFO, self.COMM)
-        self.memory = self.WIN.memory
+        self.memory = self.WIN.tomemory()
         memzero(self.memory)
 
     def tearDown(self):
         self.WIN.Free()
 
     def testSharedQuery(self):
-        memory = self.WIN.memory
+        memory = self.WIN.tomemory()
         address = MPI.Get_address(memory)
         length = len(memory)
         memories = self.COMM.allgather((address, length))
@@ -176,16 +176,20 @@ class BaseTestWinCreateDynamic(BaseTestWin):
     def testGetAttr(self):
         base = self.WIN.Get_attr(MPI.WIN_BASE)
         size = self.WIN.Get_attr(MPI.WIN_SIZE)
-        disp = self.WIN.Get_attr(MPI.WIN_DISP_UNIT)
         self.assertEqual(base, 0)
         self.assertEqual(size, 0)
-        #self.assertEqual(disp, 1)
 
     def testMemory(self):
-        self.assertTrue(self.WIN.memory is None)
+        memory = self.WIN.tomemory()
+        base = MPI.Get_address(memory)
+        size = len(memory)
+        self.assertEqual(base, 0)
+        self.assertEqual(size, 0)
 
     def testAttributes(self):
-        pass
+        base, size, _ = self.WIN.attrs
+        self.assertEqual(base, 0)
+        self.assertEqual(size, 0)
 
     def testAttachDetach(self):
         mem1 = MPI.Alloc_mem(8)

@@ -20,7 +20,7 @@ cdef inline object detach_buffer(void *p, int n):
             _buffer.view.obj != NULL):
             ob = <object>_buffer.view.obj
         else:
-            ob = tomemory(p, <MPI_Aint>n)
+            ob = tomemory(p, n)
     finally:
         _buffer = None
     return ob
@@ -75,7 +75,7 @@ cdef inline int comm_neighbors_count(MPI_Comm comm,
 # -----------------------------------------------------------------------------
 
 cdef object allocate_lock = None
-if PY_MAJOR_VERSION >= 3:
+if PY3:
     try:
         from _thread import allocate_lock
     except ImportError:
