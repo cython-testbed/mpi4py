@@ -80,7 +80,7 @@ before_install:
             brew upgrade python
         fi
     fi
-  - pip$PY install https://github.com/cython/cython/archive/d902b7cf24eba5bc5be9e8001d639abd912adf6d.zip --install-option=--no-cython-compile
+  - pip$PY install https://github.com/cython/cython/archive/98bef7ce50b1883493fc10c2040c83b1ce94ed65.zip --install-option=--no-cython-compile
   - python$PY -m pip install numpy
   - ./conf/ci/travis-ci/install-mpi.sh $MPI
   - python$PY --version
