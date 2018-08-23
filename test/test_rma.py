@@ -3,12 +3,12 @@ import mpiunittest as unittest
 import arrayimpl
 import sys
 
-typemap = MPI._typedict
+pypy_lt_53 = (hasattr(sys, 'pypy_version_info') and
+              sys.pypy_version_info < (5, 3))
 
 def mkzeros(n):
-    if hasattr(sys, 'pypy_version_info'):
-        if sys.pypy_version_info < (5, 3):
-            return b'\0' * n
+    if pypy_lt_53:
+        return b'\0' * n
     return bytearray(n)
 
 def memzero(m):
@@ -40,6 +40,7 @@ class BaseTestRMA(object):
             MPI.Free_mem(self.mpi_memory)
 
     def testPutGet(self):
+        typemap = MPI._typedict
         group = self.WIN.Get_group()
         size = group.Get_size()
         group.Free()
@@ -138,10 +139,13 @@ class BaseTestRMA(object):
                                    MPI.REPLACE, MPI.NO_OP):
                             self.WIN.Lock(rank)
                             self.WIN.Put(ones.as_mpi(), rank)
+                            self.WIN.Flush(rank)
                             self.WIN.Get_accumulate(sbuf.as_mpi(),
                                                     rbuf.as_mpi_c(count),
                                                     rank, op=op)
+                            self.WIN.Flush(rank)
                             self.WIN.Get(gbuf.as_mpi_c(count), rank)
+                            self.WIN.Flush(rank)
                             self.WIN.Unlock(rank)
                             #
                             for i in range(count):
@@ -250,22 +254,32 @@ class BaseTestRMA(object):
         self.WIN.Accumulate([None, MPI.INT], MPI.PROC_NULL, None, MPI.SUM)
         self.WIN.Fence()
 
+    def testGetAccumulateProcNull(self):
+        obuf = [mkzeros(8), 0, MPI.INT]
+        rbuf = [mkzeros(8), 0, MPI.INT]
+        self.WIN.Fence()
+        try:
+            self.WIN.Get_accumulate(obuf, rbuf, MPI.PROC_NULL)
+        except NotImplementedError:
+            self.skipTest('mpi-win-get_accumulate')
+        self.WIN.Fence()
+
     ##def testFetchAndOpProcNull(self):
+    ##    obuf = cbuf = rbuf = None
     ##    self.WIN.Fence()
-    ##    obuf = rbuf = None
-    ##    self.WIN.Fence()
-    ##    self.WIN.Fetch_and_op(obuf, rbuf, MPI.PROC_NULL, 0)
-    ##    self.WIN.Fence()
-    ##    self.WIN.Fetch_and_op(obuf, rbuf, MPI.PROC_NULL, 0)
+    ##    try:
+    ##        self.WIN.Fetch_and_op(obuf, rbuf, MPI.PROC_NULL, 0)
+    ##    except NotImplementedError:
+    ##        self.skipTest('mpi-win-fetch_and_op')
     ##    self.WIN.Fence()
 
     ##def testCompareAndSwapProcNull(self):
-    ##    self.WIN.Fence()
     ##    obuf = cbuf = rbuf = None
     ##    self.WIN.Fence()
-    ##    self.WIN.Compare_and_swap(obuf, cbuf, rbuf, MPI.PROC_NULL, 0)
-    ##    self.WIN.Fence()
-    ##    self.WIN.Compare_and_swap(obuf, cbuf, rbuf, MPI.PROC_NULL, 0)
+    ##    try:
+    ##        self.WIN.Compare_and_swap(obuf, cbuf, rbuf, MPI.PROC_NULL, 0)
+    ##    except NotImplementedError:
+    ##        self.skipTest('mpi-win-compare_and_swap')
     ##    self.WIN.Fence()
 
     def testFence(self):
